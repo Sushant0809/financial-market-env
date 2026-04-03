@@ -25,6 +25,15 @@ class MarketAction(Action):
     )
 
 
+class MarketActions(Action):
+    """Multiple actions submitted in a single step — one per symbol."""
+
+    actions: List[MarketAction] = Field(
+        default_factory=list,
+        description="List of per-symbol trading actions to execute this step",
+    )
+
+
 class MarketObservation(Observation):
     """Observation from the Financial Market environment."""
 

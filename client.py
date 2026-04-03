@@ -11,35 +11,32 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 
 try:
-    from .models import MarketAction, MarketObservation, MarketState
+    from .models import MarketAction, MarketActions, MarketObservation, MarketState
 except ImportError:
-    from models import MarketAction, MarketObservation, MarketState
+    from models import MarketAction, MarketActions, MarketObservation, MarketState
 
 
-class MarketEnv(EnvClient[MarketAction, MarketObservation, MarketState]):
+class MarketEnv(EnvClient[MarketActions, MarketObservation, MarketState]):
     """
     Async client for the Financial Market Environment.
 
     Example (async):
         >>> async with MarketEnv(base_url="http://localhost:8000") as env:
         ...     result = await env.reset(task="easy")
-        ...     result = await env.step(MarketAction(symbol="RELIANCE.NS", action_type="buy", quantity=0.5))
+        ...     actions = MarketActions(actions=[
+        ...         MarketAction(symbol="RELIANCE.NS", action_type="buy", quantity=0.5),
+        ...         MarketAction(symbol="TCS.NS", action_type="buy", quantity=0.3),
+        ...     ])
+        ...     result = await env.step(actions)
         ...     print(result.reward)
-
-    Example (from Docker):
-        >>> env = await MarketEnv.from_docker_image("financial-market-env:latest")
-        >>> try:
-        ...     result = await env.reset(task="medium")
-        ...     result = await env.step(MarketAction(symbol="TCS.NS", action_type="hold", quantity=0.0))
-        ... finally:
-        ...     await env.close()
     """
 
-    def _step_payload(self, action: MarketAction) -> Dict:
+    def _step_payload(self, action: MarketActions) -> Dict:
         return {
-            "symbol": action.symbol,
-            "action_type": action.action_type,
-            "quantity": action.quantity,
+            "actions": [
+                {"symbol": a.symbol, "action_type": a.action_type, "quantity": a.quantity}
+                for a in action.actions
+            ]
         }
 
     def _parse_result(self, payload: Dict) -> StepResult[MarketObservation]:

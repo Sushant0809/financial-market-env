@@ -15,11 +15,11 @@ from uuid import uuid4
 from openenv.core.env_server.interfaces import Environment
 
 try:
-    from ..models import MarketAction, MarketObservation, MarketState
+    from ..models import MarketAction, MarketActions, MarketObservation, MarketState
     from ..simulator import MarketDataSimulator, TASK_INITIAL_CASH, TASK_STEPS, TASK_SYMBOLS
     from ..grader import compute_step_reward, compute_final_reward
 except ImportError:
-    from models import MarketAction, MarketObservation, MarketState
+    from models import MarketAction, MarketActions, MarketObservation, MarketState
     from simulator import MarketDataSimulator, TASK_INITIAL_CASH, TASK_STEPS, TASK_SYMBOLS
     from grader import compute_step_reward, compute_final_reward
 
@@ -116,11 +116,11 @@ class MarketEnvironment(Environment):
 
     def step(
         self,
-        action: MarketAction,
+        action: MarketActions,
         timeout_s: Optional[float] = None,
         **kwargs: Any,
     ) -> MarketObservation:
-        """Execute a trading action and advance the market by one day."""
+        """Execute multiple trading actions and advance the market by one day."""
         if self._done:
             return self._terminal_obs("Episode already finished.")
 
@@ -131,7 +131,13 @@ class MarketEnvironment(Environment):
         prices_after = _simulator.get_prices(self._window, self._current_step)
 
         prev_value = self._portfolio_value(prices_before)
-        feedback = self._execute_action(action, prices_before)
+
+        # Execute all actions for this step
+        feedbacks = []
+        for act in action.actions:
+            feedbacks.append(self._execute_action(act, prices_before))
+        feedback = " | ".join(feedbacks) if feedbacks else "No actions submitted."
+
         curr_value = self._portfolio_value(prices_after)
 
         self._history.append({"portfolio_value": curr_value})

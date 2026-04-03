@@ -21,14 +21,14 @@ from typing import List, Optional
 
 from openai import OpenAI
 
-from client import MarketEnv, MarketAction
+from client import MarketEnv, MarketAction, MarketActions
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
 IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-HF_TOKEN = os.getenv("HF_TOKEN")
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 TASK_NAME = os.getenv("MARKET_TASK", "easy")          # easy | medium | hard
@@ -49,18 +49,35 @@ SYSTEM_PROMPT = textwrap.dedent(
       - market_data: OHLCV + RSI + MACD for each available symbol
       - portfolio: shares currently held per symbol
       - cash_balance: available cash (in INR)
-      - feedback: result of your last action
+      - feedback: result of your last actions
 
     Your goal is to maximise portfolio value over the episode.
 
-    You MUST respond with a single JSON object on one line — no markdown, no explanation:
-    {"symbol": "<SYMBOL>", "action_type": "<buy|sell|hold>", "quantity": <0.0-1.0>}
+    You MUST respond with a JSON array — one entry per available symbol.
+    Use EXACTLY these field names:
 
-    Rules:
-    - symbol must be one of the symbols shown in market_data
-    - action_type: "buy" spends quantity*cash, "sell" sells quantity*holdings, "hold" does nothing
-    - quantity: a float in [0.0, 1.0]
-    - Respond ONLY with the JSON. Nothing else.
+    [
+      {"symbol": "RELIANCE.NS", "action_type": "buy",  "quantity": 0.40},
+      {"symbol": "TCS.NS",      "action_type": "hold", "quantity": 0.00},
+      {"symbol": "HDFCBANK.NS", "action_type": "buy",  "quantity": 0.30}
+    ]
+
+    Field rules (STRICT):
+    - "symbol": exact symbol string from market_data
+    - "action_type": must be exactly "buy", "sell", or "hold"
+    - "quantity": a fraction between 0.0 and 1.0 (NOT number of shares)
+      - buy: spends quantity × available_cash on that symbol
+      - sell: sells quantity × shares_held of that symbol
+      - hold: do nothing (quantity ignored)
+
+    Strategy rules:
+    - Include ALL available symbols in your response
+    - Diversify: buy 2-3 stocks using 0.2–0.4 quantity each (not all-in on one)
+    - RSI < 30 = oversold → good to buy
+    - RSI > 70 = overbought → consider selling
+    - MACD positive = uptrend, negative = downtrend
+    - Keep at least 10% cash reserve
+    - Respond ONLY with the JSON array. No markdown, no explanation.
     """
 ).strip()
 
@@ -126,8 +143,8 @@ def _build_user_prompt(obs) -> str:
     ).strip()
 
 
-def _parse_action(text: str, valid_symbols: list) -> Optional[MarketAction]:
-    """Extract and validate a MarketAction from the LLM's text response."""
+def _parse_actions(text: str, valid_symbols: list) -> MarketActions:
+    """Extract and validate a MarketActions list from the LLM's text response."""
     text = text.strip()
     # Strip markdown code fences if present
     if text.startswith("```"):
@@ -135,24 +152,47 @@ def _parse_action(text: str, valid_symbols: list) -> Optional[MarketAction]:
         text = "\n".join(
             l for l in lines if not l.strip().startswith("```")
         ).strip()
+
+    def _fallback() -> MarketActions:
+        return MarketActions(actions=[
+            MarketAction(symbol=sym, action_type="hold", quantity=0.0)
+            for sym in valid_symbols
+        ])
+
     try:
         data = json.loads(text)
-        symbol = data.get("symbol", "")
-        action_type = data.get("action_type", "hold")
-        quantity = float(data.get("quantity", 0.5))
-        # Validate symbol
-        if symbol not in valid_symbols:
-            symbol = valid_symbols[0] if valid_symbols else symbol
-        action_type = action_type if action_type in ("buy", "sell", "hold") else "hold"
-        quantity = max(0.0, min(1.0, quantity))
-        return MarketAction(symbol=symbol, action_type=action_type, quantity=quantity)
+        # Handle both array and single object responses
+        if isinstance(data, dict):
+            data = [data]
+        if not isinstance(data, list):
+            return _fallback()
+
+        actions = []
+        for item in data:
+            symbol = item.get("symbol", "")
+            action_type = item.get("action_type") or item.get("action", "hold")
+            quantity = float(item.get("quantity", 0.0))
+            # Clamp: quantity must be a fraction 0-1, not share count
+            if quantity > 1.0:
+                quantity = 1.0
+            if symbol not in valid_symbols:
+                continue
+            action_type = action_type if action_type in ("buy", "sell", "hold") else "hold"
+            quantity = max(0.0, min(1.0, quantity))
+            actions.append(MarketAction(symbol=symbol, action_type=action_type, quantity=quantity))
+
+        # Ensure every symbol has an action (default hold for missing ones)
+        acted_symbols = {a.symbol for a in actions}
+        for sym in valid_symbols:
+            if sym not in acted_symbols:
+                actions.append(MarketAction(symbol=sym, action_type="hold", quantity=0.0))
+
+        return MarketActions(actions=actions) if actions else _fallback()
     except Exception:
-        # Fallback: hold the first valid symbol
-        sym = valid_symbols[0] if valid_symbols else "RELIANCE.NS"
-        return MarketAction(symbol=sym, action_type="hold", quantity=0.0)
+        return _fallback()
 
 
-def _get_model_action(client: OpenAI, obs, history: List[str]) -> MarketAction:
+def _get_model_action(client: OpenAI, obs, history: List[str]) -> MarketActions:
     user_prompt = _build_user_prompt(obs)
     valid_symbols = list(obs.market_data.keys())
     try:
@@ -172,8 +212,7 @@ def _get_model_action(client: OpenAI, obs, history: List[str]) -> MarketAction:
         print(f"[DEBUG] LLM call failed: {exc}", flush=True)
         text = ""
 
-    action = _parse_action(text, valid_symbols)
-    return action
+    return _parse_actions(text, valid_symbols)
 
 
 # ---------------------------------------------------------------------------
@@ -206,10 +245,14 @@ async def main() -> None:
             if result.done:
                 break
 
-            action = _get_model_action(client, obs, history)
-            action_str = f"{action.action_type}({action.symbol},{action.quantity:.2f})"
+            actions = _get_model_action(client, obs, history)
+            action_str = "+".join(
+                f"{a.action_type}({a.symbol},{a.quantity:.2f})"
+                for a in actions.actions
+                if a.action_type != "hold" or a.quantity > 0
+            ) or "hold(all,0.00)"
 
-            result = await env.step(action)
+            result = await env.step(actions)
             obs = result.observation
 
             reward = result.reward or 0.0
@@ -220,7 +263,7 @@ async def main() -> None:
             log_step(step=step, action=action_str, reward=reward, done=done, error=None)
 
             history.append(
-                f"Step {step}: {action_str} → reward {reward:+.4f} | pv=₹{obs.portfolio_value:,.2f}"
+                f"Step {step}: {action_str} → reward {reward:+.4f} | pv=₹{obs.portfolio_value:,.2f} | cash=₹{obs.cash_balance:,.2f}"
             )
 
             if done:

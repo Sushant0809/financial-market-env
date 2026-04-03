@@ -18,16 +18,16 @@ except Exception as e:
     raise ImportError("openenv-core is required. Install with: pip install 'openenv-core[core]'") from e
 
 try:
-    from ..models import MarketAction, MarketObservation
+    from ..models import MarketActions, MarketObservation
     from .market_environment import MarketEnvironment
 except ImportError:
-    from models import MarketAction, MarketObservation
+    from models import MarketActions, MarketObservation
     from server.market_environment import MarketEnvironment
 
 
 app = create_app(
     MarketEnvironment,
-    MarketAction,
+    MarketActions,
     MarketObservation,
     env_name="financial_market_env",
     max_concurrent_envs=16,

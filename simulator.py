@@ -35,7 +35,7 @@ TASK_SYMBOLS = {
     "nifty50": NIFTY_50_SYMBOLS,
 }
 
-TASK_STEPS = {"easy": 5, "medium": 10, "hard": 20, "nifty50": 30}
+TASK_STEPS = {"easy": 10, "medium": 30, "hard": 40, "nifty50": 30}
 TASK_INITIAL_CASH = {"easy": 10000.0, "medium": 30000.0, "hard": 50000.0, "nifty50": 500000.0}
 
 _DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
