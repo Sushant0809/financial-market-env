@@ -28,7 +28,7 @@ from client import MarketEnv, MarketAction
 # ---------------------------------------------------------------------------
 
 IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
+HF_TOKEN = os.getenv("HF_TOKEN")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 TASK_NAME = os.getenv("MARKET_TASK", "easy")          # easy | medium | hard
@@ -180,7 +180,7 @@ def _get_model_action(client: OpenAI, obs, history: List[str]) -> MarketAction:
 # ---------------------------------------------------------------------------
 
 async def main() -> None:
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
     if IMAGE_NAME:
         env = await MarketEnv.from_docker_image(IMAGE_NAME)
