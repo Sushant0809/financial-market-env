@@ -35,7 +35,7 @@ TASK_NAME = os.getenv("MARKET_TASK", "easy")          # easy | medium | hard
 BENCHMARK = os.getenv("MARKET_BENCHMARK", "financial_market_env")
 MAX_STEPS = int(os.getenv("MARKET_MAX_STEPS", "8"))   # hard cap; env may terminate earlier
 TEMPERATURE = 0.3
-MAX_TOKENS = 200
+MAX_TOKENS = 2000
 SUCCESS_SCORE_THRESHOLD = 0.3  # score ≥ 0.3 counts as success
 
 # Per-step max reward depends on task: scale so perfect trading ≈ MAX_STEPS * 0.02
@@ -166,7 +166,8 @@ def _get_model_action(client: OpenAI, obs, history: List[str]) -> MarketAction:
             max_tokens=MAX_TOKENS,
             stream=False,
         )
-        text = (completion.choices[0].message.content or "").strip()
+        msg = completion.choices[0].message
+        text = (msg.content or getattr(msg, "reasoning_content", None) or "").strip()
     except Exception as exc:
         print(f"[DEBUG] LLM call failed: {exc}", flush=True)
         text = ""
