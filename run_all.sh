@@ -9,16 +9,16 @@ run_all_tasks() {
     local token=$3
 
     echo ""
-    echo "========== EASY (1 stock, 5 days) =========="
-    MARKET_TASK=easy MARKET_MAX_STEPS=5 API_BASE_URL=$api_base MODEL_NAME=$model HF_TOKEN=$token python3 inference.py
+    echo "========== EASY (1 stock, 10 days) =========="
+    MARKET_TASK=easy MARKET_MAX_STEPS=10 API_BASE_URL=$api_base MODEL_NAME=$model HF_TOKEN=$token python3 inference.py
 
     echo ""
-    echo "========== MEDIUM (3 stocks, 10 days) =========="
-    MARKET_TASK=medium MARKET_MAX_STEPS=10 API_BASE_URL=$api_base MODEL_NAME=$model HF_TOKEN=$token python3 inference.py
+    echo "========== MEDIUM (3 stocks, 30 days) =========="
+    MARKET_TASK=medium MARKET_MAX_STEPS=30 API_BASE_URL=$api_base MODEL_NAME=$model HF_TOKEN=$token python3 inference.py
 
     echo ""
-    echo "========== HARD (5 stocks, 20 days) =========="
-    MARKET_TASK=hard MARKET_MAX_STEPS=20 API_BASE_URL=$api_base MODEL_NAME=$model HF_TOKEN=$token python3 inference.py
+    echo "========== HARD (5 stocks, 40 days) =========="
+    MARKET_TASK=hard MARKET_MAX_STEPS=40 API_BASE_URL=$api_base MODEL_NAME=$model HF_TOKEN=$token python3 inference.py
 
     echo ""
     echo "========== NIFTY 50 (50 stocks, 30 days) =========="

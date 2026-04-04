@@ -9,6 +9,8 @@ from typing import Dict
 
 from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
+from openenv.core.utils import convert_to_ws_url
+from websockets.asyncio.client import connect as ws_connect
 
 try:
     from .models import MarketAction, MarketActions, MarketObservation, MarketState
@@ -30,6 +32,24 @@ class MarketEnv(EnvClient[MarketActions, MarketObservation, MarketState]):
         ...     result = await env.step(actions)
         ...     print(result.reward)
     """
+
+    async def connect(self) -> "MarketEnv":
+        """Override to disable WebSocket keepalive pings.
+
+        The default client uses ping_interval=20s which causes timeouts when
+        the LLM inference takes longer than the keepalive window (e.g. Nemotron
+        Ultra reasoning over 50 NIFTY stocks). Setting ping_interval=None
+        disables pings so long-running steps don't drop the connection.
+        """
+        if self._ws is not None:
+            return self
+        self._ws = await ws_connect(
+            self._ws_url,
+            open_timeout=self._connect_timeout,
+            max_size=self._max_message_size,
+            ping_interval=None,
+        )
+        return self
 
     def _step_payload(self, action: MarketActions) -> Dict:
         return {
