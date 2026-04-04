@@ -240,6 +240,7 @@ async def main() -> None:
     try:
         result = await env.reset(task=TASK_NAME)
         obs = result.observation
+        initial_pv = obs.portfolio_value or obs.cash_balance or 1.0
 
         for step in range(1, MAX_STEPS + 1):
             if result.done:
@@ -261,6 +262,14 @@ async def main() -> None:
             steps_taken = step
 
             log_step(step=step, action=action_str, reward=reward, done=done, error=None)
+
+            pnl_pct = (obs.portfolio_value - initial_pv) / initial_pv * 100
+            cumulative_score_pct = sum(rewards) / MAX_TOTAL_REWARD * 100 if MAX_TOTAL_REWARD > 0 else 0.0
+            print(
+                f"[PNL]  step={step} portfolio=₹{obs.portfolio_value:,.2f} "
+                f"pnl={pnl_pct:+.2f}% score={cumulative_score_pct:.1f}%",
+                flush=True,
+            )
 
             history.append(
                 f"Step {step}: {action_str} → reward {reward:+.4f} | pv=₹{obs.portfolio_value:,.2f} | cash=₹{obs.cash_balance:,.2f}"
