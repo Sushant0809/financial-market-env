@@ -19,7 +19,7 @@ import os
 import textwrap
 from typing import List, Optional
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from client import MarketEnv, MarketAction, MarketActions
 
@@ -192,11 +192,11 @@ def _parse_actions(text: str, valid_symbols: list) -> MarketActions:
         return _fallback()
 
 
-def _get_model_action(client: OpenAI, obs, history: List[str]) -> MarketActions:
+async def _get_model_action(client: AsyncOpenAI, obs, history: List[str]) -> MarketActions:
     user_prompt = _build_user_prompt(obs)
     valid_symbols = list(obs.market_data.keys())
     try:
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -220,7 +220,7 @@ def _get_model_action(client: OpenAI, obs, history: List[str]) -> MarketActions:
 # ---------------------------------------------------------------------------
 
 async def main() -> None:
-    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+    client = AsyncOpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
     if IMAGE_NAME:
         env = await MarketEnv.from_docker_image(IMAGE_NAME)
@@ -246,7 +246,7 @@ async def main() -> None:
             if result.done:
                 break
 
-            actions = _get_model_action(client, obs, history)
+            actions = await _get_model_action(client, obs, history)
             action_str = "+".join(
                 f"{a.action_type}({a.symbol},{a.quantity:.2f})"
                 for a in actions.actions
