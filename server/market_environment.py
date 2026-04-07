@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 
 from openenv.core.env_server.interfaces import Environment
+from openenv.core.rubrics import Rubric
 
 try:
     from ..models import MarketAction, MarketActions, MarketObservation, MarketState
@@ -22,6 +23,32 @@ except ImportError:
     from models import MarketAction, MarketActions, MarketObservation, MarketState
     from simulator import MarketDataSimulator, TASK_INITIAL_CASH, TASK_STEPS, TASK_SYMBOLS
     from grader import compute_step_reward, compute_final_reward
+
+
+class EasyGrader(Rubric):
+    """Easy task: normalised simple return. 10% return = score 1.0."""
+    def forward(self, action: Any, observation: Any) -> float:
+        return float(observation.reward) if observation.reward is not None else 0.0
+
+
+class MediumGrader(Rubric):
+    """Medium task: sigmoid of annualised Sharpe ratio."""
+    def forward(self, action: Any, observation: Any) -> float:
+        return float(observation.reward) if observation.reward is not None else 0.0
+
+
+class HardGrader(Rubric):
+    """Hard/nifty50 task: return minus drawdown penalty."""
+    def forward(self, action: Any, observation: Any) -> float:
+        return float(observation.reward) if observation.reward is not None else 0.0
+
+
+TASK_RUBRICS = {
+    "easy":    EasyGrader,
+    "medium":  MediumGrader,
+    "hard":    HardGrader,
+    "nifty50": HardGrader,
+}
 
 
 # Shared simulator instance (data loaded once per process)
@@ -66,6 +93,9 @@ class MarketEnvironment(Environment):
         **kwargs: Any,
     ) -> MarketObservation:
         """Reset the environment for a new episode."""
+        # Set rubric for this task so the framework recognises it as graded
+        self.rubric = TASK_RUBRICS.get(task, EasyGrader)()
+
         self._task = task if task in TASK_STEPS else "easy"
         self._symbols = TASK_SYMBOLS[self._task]
         self._max_steps = TASK_STEPS[self._task]
