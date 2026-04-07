@@ -31,7 +31,7 @@ IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-TASK_NAME = os.getenv("MARKET_TASK", "easy")          # easy | medium | hard
+TASK_NAME = os.getenv("MARKET_TASK", "easy")          # easy | medium | hard | all
 BENCHMARK = os.getenv("MARKET_BENCHMARK", "financial_market_env")
 MAX_STEPS = int(os.getenv("MARKET_MAX_STEPS", "8"))   # hard cap; env may terminate earlier
 TEMPERATURE = 0.3
@@ -41,6 +41,10 @@ SUCCESS_SCORE_THRESHOLD = 0.3  # score ≥ 0.3 counts as success
 # Per-step max reward depends on task: scale so perfect trading ≈ MAX_STEPS * 0.02
 _MAX_REWARD_PER_STEP = 0.02
 MAX_TOTAL_REWARD = MAX_STEPS * _MAX_REWARD_PER_STEP
+
+# When MARKET_TASK is not explicitly set to a single task, run all three
+_ALL_TASKS = ["easy", "medium", "hard"]
+TASK_LIST = _ALL_TASKS if TASK_NAME not in ("easy", "medium", "hard", "nifty50") else [TASK_NAME]
 
 SYSTEM_PROMPT = textwrap.dedent(
     """
@@ -219,27 +223,18 @@ async def _get_model_action(client: AsyncOpenAI, obs, history: List[str]) -> Mar
 # Main episode loop
 # ---------------------------------------------------------------------------
 
-async def main() -> None:
-    client = AsyncOpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
-
+async def run_episode(client: AsyncOpenAI, env: "MarketEnv", task: str) -> None:
+    """Run a single episode for the given task and log [START]/[END]."""
     history: List[str] = []
     rewards: List[float] = []
     steps_taken = 0
     score = 0.0
     success = False
-    env = None
 
-    log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
+    log_start(task=task, env=BENCHMARK, model=MODEL_NAME)
 
     try:
-        if IMAGE_NAME:
-            env = await MarketEnv.from_docker_image(IMAGE_NAME)
-        else:
-            base_url = os.getenv("ENV_BASE_URL", "http://localhost:7860")
-            env = MarketEnv(base_url=base_url)
-            await env.connect()
-
-        result = await env.reset(task=TASK_NAME)
+        result = await env.reset(task=task)
         obs = result.observation
         initial_pv = obs.portfolio_value or obs.cash_balance or 1.0
 
@@ -284,14 +279,34 @@ async def main() -> None:
         success = score >= SUCCESS_SCORE_THRESHOLD
 
     except Exception as exc:
-        print(f"[DEBUG] Episode error: {exc}", flush=True)
+        print(f"[DEBUG] Episode error ({task}): {exc}", flush=True)
+    finally:
+        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
+
+
+async def main() -> None:
+    client = AsyncOpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+    env = None
+
+    try:
+        if IMAGE_NAME:
+            env = await MarketEnv.from_docker_image(IMAGE_NAME)
+        else:
+            base_url = os.getenv("ENV_BASE_URL", "http://localhost:7860")
+            env = MarketEnv(base_url=base_url)
+            await env.connect()
+
+        for task in TASK_LIST:
+            await run_episode(client, env, task)
+
+    except Exception as exc:
+        print(f"[DEBUG] Setup error: {exc}", flush=True)
     finally:
         if env is not None:
             try:
                 await env.close()
             except Exception as e:
                 print(f"[DEBUG] env.close() error: {e}", flush=True)
-        log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 
 if __name__ == "__main__":
