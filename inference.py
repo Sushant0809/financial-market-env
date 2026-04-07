@@ -222,22 +222,23 @@ async def _get_model_action(client: AsyncOpenAI, obs, history: List[str]) -> Mar
 async def main() -> None:
     client = AsyncOpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
-    if IMAGE_NAME:
-        env = await MarketEnv.from_docker_image(IMAGE_NAME)
-    else:
-        base_url = os.getenv("ENV_BASE_URL", "http://localhost:8000")
-        env = MarketEnv(base_url=base_url)
-        await env.connect()
-
     history: List[str] = []
     rewards: List[float] = []
     steps_taken = 0
     score = 0.0
     success = False
+    env = None
 
     log_start(task=TASK_NAME, env=BENCHMARK, model=MODEL_NAME)
 
     try:
+        if IMAGE_NAME:
+            env = await MarketEnv.from_docker_image(IMAGE_NAME)
+        else:
+            base_url = os.getenv("ENV_BASE_URL", "http://localhost:7860")
+            env = MarketEnv(base_url=base_url)
+            await env.connect()
+
         result = await env.reset(task=TASK_NAME)
         obs = result.observation
         initial_pv = obs.portfolio_value or obs.cash_balance or 1.0
@@ -285,10 +286,11 @@ async def main() -> None:
     except Exception as exc:
         print(f"[DEBUG] Episode error: {exc}", flush=True)
     finally:
-        try:
-            await env.close()
-        except Exception as e:
-            print(f"[DEBUG] env.close() error: {e}", flush=True)
+        if env is not None:
+            try:
+                await env.close()
+            except Exception as e:
+                print(f"[DEBUG] env.close() error: {e}", flush=True)
         log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
 
 
