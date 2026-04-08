@@ -40,7 +40,7 @@ def compute_final_reward(task: str, history: List[dict], initial_value: float) -
         return _medium_reward(history, initial_value)
     elif task in ("hard", "nifty50"):
         return _hard_reward(history, initial_value)
-    return 0.0
+    return 1e-4
 
 
 def _easy_reward(history: List[dict], initial_value: float) -> float:
@@ -54,8 +54,8 @@ def _easy_reward(history: List[dict], initial_value: float) -> float:
         return 0.0
     final_value = history[-1]["portfolio_value"]
     ret = (final_value - initial_value) / max(initial_value, 1e-9)
-    # Scale so that a 10% total return scores 1.0
-    return float(min(max(ret * 10.0, 0.0), 1.0))
+    # Scale so that a 10% total return scores 1.0; clamp to open interval (0, 1)
+    return float(min(max(ret * 10.0, 1e-4), 1.0 - 1e-4))
 
 
 def _medium_reward(history: List[dict], initial_value: float) -> float:
@@ -71,11 +71,12 @@ def _medium_reward(history: List[dict], initial_value: float) -> float:
     step_returns = np.diff(values) / np.maximum(values[:-1], 1e-9)
     std = float(np.std(step_returns))
     if std < 1e-10:
-        return 0.5 if float(np.mean(step_returns)) >= 0 else 0.0
+        return 0.5 if float(np.mean(step_returns)) >= 0 else 1e-4
     # Annualise assuming ~252 trading days; episodes are short so scale lightly
     sharpe = float(np.mean(step_returns) / std) * np.sqrt(252)
-    # Sigmoid centred at sharpe=0: score ∈ (0, 1)
-    return float(1.0 / (1.0 + np.exp(-sharpe / 2.0)))
+    # Sigmoid centred at sharpe=0: score ∈ (0, 1), clamp to open interval
+    score = float(1.0 / (1.0 + np.exp(-sharpe / 2.0)))
+    return float(min(max(score, 1e-4), 1.0 - 1e-4))
 
 
 def _hard_reward(history: List[dict], initial_value: float) -> float:
@@ -99,6 +100,6 @@ def _hard_reward(history: List[dict], initial_value: float) -> float:
         dd = (peak - v) / peak if peak > 0 else 0.0
         max_dd = max(max_dd, dd)
 
-    # Score: centre at 0.5, penalise drawdown
+    # Score: centre at 0.5, penalise drawdown; clamp to open interval (0, 1)
     score = (total_ret + 0.5) - 0.5 * max_dd
-    return float(min(max(score, 0.0), 1.0))
+    return float(min(max(score, 1e-4), 1.0 - 1e-4))

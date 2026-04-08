@@ -128,8 +128,8 @@ def run_grader(request: GraderRequest):
     if score is None and request.history and request.initial_value:
         score = compute_final_reward(task_id, request.history, request.initial_value)
 
-    score = float(score) if score is not None else 0.0
-    score = min(max(score, 0.0), 1.0)
+    score = float(score) if score is not None else 1e-4
+    score = min(max(score, 1e-4), 1.0 - 1e-4)
 
     return {
         "task_id": task_id,
